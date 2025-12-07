@@ -13,6 +13,7 @@ const signupUser = async (payload: Record<string, unknown>) => {
         [name, email, hashedPass, phone, role]
     );
 
+    delete result.rows[0].password;
     return result;
 };
 
@@ -22,7 +23,6 @@ const signinUser = async (email: string, password: string) => {
         email,
     ]);
 
-    console.log(result);
     if (result.rows.length === 0) {
         return null;
     }
@@ -31,12 +31,12 @@ const signinUser = async (email: string, password: string) => {
 
     const match = await bcrypt.compare(password, user.password);
 
-    console.log({ match, user });
     if (!match) {
         return false;
     }
 
     const jwtPayload = {
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -46,6 +46,7 @@ const signinUser = async (email: string, password: string) => {
         expiresIn: "7d",
     });
 
+    delete user.password;
     return { token, user };
 };
 
