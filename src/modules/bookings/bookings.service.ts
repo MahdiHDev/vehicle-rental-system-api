@@ -46,7 +46,182 @@ const createBooking = async (payload: Record<string, unknown>) => {
         vehicle_id as string
     );
 
-    return result;
+    const vehicle = {
+        vehicle_name: vehicleInfo.rows[0].vehicle_name,
+        daily_rent_price: vehicleInfo.rows[0].daily_rent_price,
+    };
+
+    console.log(vehicle);
+
+    const finalPayload = {
+        ...result.rows,
+        vehicle: vehicle,
+    };
+
+    return finalPayload;
 };
 
-export const bookingServices = { createBooking };
+const getAllBookings = async (payload: Record<string, unknown>) => {
+    const userInfo = await pool.query("SELECT * FROM users WHERE id = $1", [
+        payload.id,
+    ]);
+    console.log("payload: ", payload);
+
+    if (payload.role === "admin") {
+        const result = await pool.query(` SELECT 
+                b.id,
+                b.customer_id,
+                b.vehicle_id,
+                b.rent_start_date,
+                b.rent_end_date,
+                b.total_price,
+                b.status,
+
+                u.name AS customer_name,
+                u.email AS customer_email,
+
+                v.vehicle_name,
+                v.registration_number
+            FROM bookings b
+            JOIN users u ON b.customer_id = u.id
+            JOIN vehicles v ON b.vehicle_id = v.id`);
+
+        const finalResult = result.rows.map((row) => ({
+            id: row.id,
+            customer_id: row.customer_id,
+            vehicle_id: row.vehicle_id,
+            rent_start_date: row.rent_start_date,
+            rent_end_date: row.rent_end_date,
+            total_price: row.total_price,
+            status: row.status,
+            customer: {
+                name: row.customer_name,
+                email: row.customer_email,
+            },
+            vehicle: {
+                vehicle_name: row.vehicle_name,
+                registration_number: row.registration_number,
+            },
+        }));
+
+        return finalResult;
+    }
+
+    const result = await pool.query(
+        `SELECT 
+        b.id,
+        b.customer_id,
+        b.vehicle_id,
+        b.rent_start_date,
+        b.rent_end_date,
+        b.total_price,
+        b.status,
+
+        v.vehicle_name,
+        v.registration_number,
+        v.type AS vehicle_type
+    FROM bookings b
+    JOIN vehicles v ON b.vehicle_id = v.id
+    WHERE b.customer_id = $1`,
+        [userInfo.rows[0].id]
+    );
+
+    const finalResult = result.rows.map((row) => ({
+        id: row.id,
+        vehicle_id: row.vehicle_id,
+        rent_start_date: row.rent_start_date,
+        rent_end_date: row.rent_end_date,
+        total_price: row.total_price,
+        status: row.status,
+        vehicle: {
+            vehicle_name: row.vehicle_name,
+            registration_number: row.registration_number,
+            type: row.vehicle_type,
+        },
+    }));
+    return finalResult;
+};
+
+const updateBookings = async (
+    bookingId: string,
+    status: string,
+    user: Record<string, unknown>
+) => {
+    console.log(bookingId, status, user);
+
+    const getBooking = await pool.query(
+        `SELECT * FROM bookings WHERE id = $1`,
+        [bookingId]
+    );
+
+    if (!getBooking.rows.length) {
+        throw new Error("Booking not found");
+    }
+
+    const booking = getBooking.rows[0];
+
+    console.log("Booking from db", booking);
+
+    const now = new Date();
+    const startingBooking = new Date(booking.rent_start_date);
+
+    const statusValidation = ["cancelled", "returned"];
+    if (!statusValidation.includes(status)) {
+        throw new Error("Invalid status");
+    }
+
+    if (user.role === "customer") {
+        if (booking.customer_id !== user.id) {
+            throw new Error("Your cannot modify other users booking");
+        }
+
+        if (status !== "cancelled") {
+            throw new Error("Customer can only cancel booking");
+        }
+
+        if (now >= startingBooking) {
+            throw new Error("Cannot cancel because booking is already started");
+        }
+
+        if (booking.status !== "active") {
+            throw new Error("Only active booking can be cancelled");
+        }
+    }
+
+    if (user.role === "admin") {
+        if (status !== "returned") {
+            throw new Error("Admin only change order to returned");
+        }
+    }
+
+    const updateBookings = await pool.query(
+        `UPDATE bookings SET status = $1 WHERE id = $2 RETURNING *`,
+        [status, bookingId]
+    );
+
+    if (status === "returned" || status === "cancelled") {
+        const updatedVehicleInfo = await vehiclesServices.updateVechicles(
+            { availability_status: "available" },
+            booking.vehicle_id
+        );
+
+        if (status === "cancelled") {
+            return updateBookings.rows[0];
+        }
+
+        const finalResult = {
+            ...updateBookings.rows[0],
+            vehicle: {
+                availability_status:
+                    updatedVehicleInfo.rows[0].availability_status,
+            },
+        };
+        return finalResult;
+    }
+};
+
+export const bookingServices = {
+    createBooking,
+    getAllBookings,
+    updateBookings,
+};

@@ -15,45 +15,6 @@ const getAllUser = async () => {
     return result;
 };
 
-// const updateVechicles = async (
-//     payload: Record<string, unknown>,
-//     vehicleId: string
-// ) => {
-//     const vehicleInfo = await getSingleVehicles(vehicleId);
-
-//     // if (vehicleInfo.rows.length === 0) {
-//     //     throw new Error("User not found");
-//     // }
-
-//     const updatedData = {
-//         ...vehicleInfo.rows[0],
-//         ...payload,
-//     };
-
-//     const {
-//         vehicle_name,
-//         type,
-//         registration_number,
-//         daily_rent_price,
-//         availability_status,
-//     } = updatedData as IvehicleInfo;
-
-//     //  `UPDATE users SET name=$1, email=$2 WHERE id=$3 RETURNING *`,
-//     const result = await pool.query(
-//         `UPDATE vehicles SET vehicle_name=$1, type=$2, registration_number=$3, daily_rent_price=$4, availability_status=$5 WHERE id=$6 RETURNING *`,
-//         [
-//             vehicle_name,
-//             type,
-//             registration_number,
-//             daily_rent_price,
-//             availability_status,
-//             vehicleId,
-//         ]
-//     );
-
-//     return result;
-// };
-
 const updateUser = async (payload: Record<string, unknown>, userId: string) => {
     const userInfo = await pool.query(`SELECT * FROM users WHERE id = $1`, [
         userId,
@@ -80,14 +41,18 @@ const updateUser = async (payload: Record<string, unknown>, userId: string) => {
 };
 
 const deleteUser = async (id: string) => {
-    const userInfo = await pool.query(`SELECT * FROM users WHERE id = $1`, [
-        id,
-    ]);
+    const activeBookings = await pool.query(
+        `SELECT id FROM bookings WHERE customer_id = $1 AND status = 'active'`,
+        [id]
+    );
 
-    console.log(userInfo);
+    if (activeBookings.rows.length > 0) {
+        throw new Error("User cannot be deleted, Active bookings exist");
+    }
 
-    const result = await pool.query(`DELETE FROM users WHERE id = $1`, [id]);
+    const result = await pool.query("DELETE FROM users WHERE id = $1", [id]);
 
+    console.log(result);
     return result;
 };
 
